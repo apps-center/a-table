@@ -1,0 +1,14 @@
+{
+  "name": "À Table!",
+  "short_name": "À Table",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#FF3B30",
+  "background_color": "#FAFAFA",
+  "display": "standalone"
+}
