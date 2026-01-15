@@ -429,6 +429,20 @@
         font-size: 1.2rem;
         font-weight: 600;
         margin-bottom: 20px;
+        animation: alertBlink 1s infinite ease-in-out;
+      }
+      
+      @keyframes alertBlink {
+        0%, 100% { 
+          opacity: 1; 
+          transform: scale(1);
+          color: var(--text);
+        }
+        50% { 
+          opacity: 0.7; 
+          transform: scale(1.05);
+          color: var(--primary);
+        }
       }
 
       .timer {
@@ -1217,11 +1231,10 @@
         if (currentAlertData) {
           currentAlertData.participants = updatedParticipants;
           renderParticipants(updatedParticipants);
-
+          
           // Vérifier si tout le monde est arrivé
-          if (updatedParticipants.every((p) => p.arrived)) {
-            handleStopAlert();
-          }
+          // Ne rien faire ici - l'initiateur gère l'arrêt dans markArrived()
+          // Les autres utilisateurs recevront l'UPDATE avec active=false
         }
       }
 
