@@ -645,6 +645,119 @@
       .blinking {
         animation: blink 1s infinite ease-in-out;
       }
+      
+      /* Écran de résultats */
+      .results-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: fadeIn 0.3s ease-out;
+      }
+      
+      .results-overlay.active {
+        display: flex;
+      }
+      
+      .results-card {
+        background: var(--card);
+        border-radius: 24px;
+        padding: 32px 24px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: var(--shadow-lg);
+        position: relative;
+        animation: scaleIn 0.4s ease-out;
+      }
+      
+      .results-close {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--bg);
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        transition: all 0.3s ease;
+      }
+      
+      .results-close:hover {
+        background: var(--primary);
+        color: white;
+        transform: rotate(90deg);
+      }
+      
+      .results-title {
+        font-family: 'Fredoka', sans-serif;
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: var(--primary);
+        margin-bottom: 24px;
+        text-align: center;
+      }
+      
+      .results-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      
+      .result-item {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        background: var(--bg);
+        border-radius: 16px;
+        gap: 16px;
+      }
+      
+      .result-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--secondary) 0%, #FF9500 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+      }
+      
+      .result-item.arrived .result-avatar {
+        background: linear-gradient(135deg, var(--success) 0%, #2EAF50 100%);
+      }
+      
+      .result-info {
+        flex-grow: 1;
+      }
+      
+      .result-name {
+        font-weight: 700;
+        font-size: 1.1rem;
+        margin-bottom: 4px;
+      }
+      
+      .result-time {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary);
+      }
+      
+      .result-item.arrived .result-time {
+        color: var(--success);
+      }
     </style>
   </head>
   <body>
@@ -735,6 +848,15 @@
       </div>
 
       <div class="loading" id="loading">Connexion à Supabase...</div>
+    </div>
+    
+    <!-- Overlay de résultats -->
+    <div id="resultsOverlay" class="results-overlay">
+      <div class="results-card">
+        <button class="results-close" onclick="closeResults()">×</button>
+        <div class="results-title">🎉 Résultats</div>
+        <div id="resultsList" class="results-list"></div>
+      </div>
     </div>
 
     <script>
@@ -993,6 +1115,9 @@
 
       function resetApp() {
         if (confirm("Veux-tu changer d'utilisateur ?")) {
+          // Fermer l'overlay de résultats s'il est ouvert
+          document.getElementById('resultsOverlay').classList.remove('active');
+          
           localStorage.removeItem("currentUser");
           location.reload();
         }
@@ -1076,8 +1201,13 @@
             return;
           }
 
-          console.log("✅ Alerte créée avec succès");
-          // L'alerte sera affichée via la subscription WebSocket
+          console.log("✅ Alerte créée avec succès", data);
+          
+          // Afficher immédiatement l'interface pour l'initiateur
+          // Ne pas attendre le WebSocket pour éviter les délais
+          if (data && data.length > 0) {
+            handleIncomingAlert(data[0]);
+          }
         } catch (error) {
           console.error("❌ Erreur triggerAlert:", error);
           alert("Erreur : " + error.message);
@@ -1122,9 +1252,16 @@
         document.getElementById("alertButtonContainer").style.display = "none";
         document.getElementById("alertActiveContainer").style.display = "flex";
 
-        document.getElementById(
-          "alertInitiator"
-        ).textContent = `${data.initiator_emoji} ${data.initiator_name} vous appelle!`;
+        // Message différent selon si c'est l'initiateur ou non
+        if (currentUser && currentUser.id === data.initiator) {
+          document.getElementById("alertInitiator").textContent = 
+            `${data.initiator_emoji} Vous avez appelé la famille à table`;
+          document.getElementById("alertInitiator").style.animation = "none"; // Pas de clignotement
+        } else {
+          document.getElementById("alertInitiator").textContent = 
+            `${data.initiator_emoji} ${data.initiator_name} vous appelle!`;
+          document.getElementById("alertInitiator").style.animation = ""; // Réactiver le clignotement
+        }
 
         renderParticipants(data.participants);
 
@@ -1302,7 +1439,49 @@
 
         clearInterval(timerInterval);
         stopBlinking();
-
+        
+        // Afficher les résultats avant de tout fermer
+        showResults();
+      }
+      
+      // ========================================
+      // AFFICHER LES RÉSULTATS
+      // ========================================
+      function showResults() {
+        if (!currentAlertData) return;
+        
+        const resultsList = document.getElementById('resultsList');
+        resultsList.innerHTML = currentAlertData.participants.map(p => {
+          const timeText = p.arrivalTime 
+            ? (() => {
+                const seconds = Math.floor((new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${minutes}:${String(secs).padStart(2, '0')}`;
+              })()
+            : 'Non arrivé';
+          
+          return `
+            <div class="result-item ${p.arrived ? 'arrived' : ''}">
+              <div class="result-avatar">${p.emoji}</div>
+              <div class="result-info">
+                <div class="result-name">${p.name}</div>
+              </div>
+              <div class="result-time">${timeText}</div>
+            </div>
+          `;
+        }).join('');
+        
+        document.getElementById('resultsOverlay').classList.add('active');
+      }
+      
+      // ========================================
+      // FERMER LES RÉSULTATS
+      // ========================================
+      function closeResults() {
+        document.getElementById('resultsOverlay').classList.remove('active');
+        
+        // Nettoyer l'interface d'alerte
         document.getElementById("alertButtonContainer").style.display = "flex";
         document.getElementById("alertActiveContainer").style.display = "none";
         document.getElementById("stopBtn").style.display = "none";
