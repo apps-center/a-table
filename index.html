@@ -857,15 +857,28 @@
     </div>
 
     <script>
+      // ========================================
+      // CONFIGURATION
+      // ========================================
       const SUPABASE_URL = "https://ckdxpugeszfgwgyafmge.supabase.co";
-      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrZHhwdWdlc3pmZ3dneWFmbWdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzOTQ1OTIsImV4cCI6MjA4Mzk3MDU5Mn0.kysbA0Nroxnb2gClfkGKOerO9Sy4pVLigVfRxp0KO4A";
-      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrZHhwdWdlc3pmZ3dneWFmbWdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzOTQ1OTIsImV4cCI6MjA4Mzk3MDU5Mn0.kysbA0Nroxnb2gClfkGKOerO9Sy4pVLigVfRxp0KO4A";
+
+      const supabaseClient = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY
+      );
+
       const familyMembers = [
         { id: "olivier", name: "Olivier", role: "Papa", emoji: "👨" },
         { id: "delphine", name: "Delphine", role: "Maman", emoji: "👩" },
         { id: "antoine", name: "Antoine", role: "12 ans", emoji: "👦" },
         { id: "come", name: "Côme", role: "10 ans", emoji: "🧒" },
       ];
+
+      // ========================================
+      // VARIABLES GLOBALES
+      // ========================================
       let currentUser = null;
       let timerInterval = null;
       let currentAlertData = null;
@@ -874,12 +887,16 @@
       const MAX_RECONNECT_ATTEMPTS = 5;
       let alertAudio = null;
       let audioInterval = null;
-      let isAudioMuted = false;
 
+      // ========================================
+      // GESTION DE L'ÉTAT DE CONNEXION
+      // ========================================
       function updateConnectionStatus(status) {
         const statusEl = document.getElementById("connectionStatus");
         const statusText = statusEl.querySelector("span");
+
         statusEl.className = "connection-status " + status;
+
         switch (status) {
           case "connected":
             statusText.textContent = "Connecté";
@@ -894,66 +911,96 @@
         }
       }
 
+      // ========================================
+      // GESTION DE L'AUDIO INTERMITTENT
+      // ========================================
       function startIntermittentAudio() {
+        // Arrêter tout intervalle précédent
         if (audioInterval) {
           clearInterval(audioInterval);
           audioInterval = null;
         }
-        if (isAudioMuted || !alertAudio) return;
+
+        if (!alertAudio) return;
+
         console.log("🔊 Démarrage de l'alerte sonore intermittente");
+
+        // Fonction pour jouer 4 secondes de son
         const playAudioBurst = () => {
-          if (isAudioMuted || !currentAlertData) {
+          if (!currentAlertData) {
             stopIntermittentAudio();
             return;
           }
+
           alertAudio.currentTime = 0;
           alertAudio.loop = false;
+          
           alertAudio.play().catch(err => {
             console.error("❌ Erreur lecture audio:", err);
           });
+
+          // Arrêter après 4 secondes
           setTimeout(() => {
-            if (alertAudio && !isAudioMuted) {
+            if (alertAudio) {
               alertAudio.pause();
               alertAudio.currentTime = 0;
             }
           }, 4000);
         };
+
+        // Jouer immédiatement
         playAudioBurst();
+
+        // Puis jouer toutes les 60 secondes (60000ms)
         audioInterval = setInterval(playAudioBurst, 60000);
       }
 
       function stopIntermittentAudio() {
         console.log("🔇 Arrêt de l'alerte sonore");
+        
         if (audioInterval) {
           clearInterval(audioInterval);
           audioInterval = null;
         }
+        
         if (alertAudio) {
           alertAudio.pause();
           alertAudio.currentTime = 0;
         }
       }
 
+      // ========================================
+      // CONFIGURATION DES PUSH NOTIFICATIONS
+      // ========================================
       async function setupPushNotifications() {
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
           console.log("❌ Push notifications non supportées");
           return;
         }
+      
         try {
           const permission = await Notification.requestPermission();
           if (permission !== 'granted') {
             console.log("⚠️ Permission de notification refusée");
             return;
           }
+      
           console.log("✅ Permission de notification accordée");
+          
         } catch (error) {
           console.error("❌ Erreur setup push notifications:", error);
         }
       }
-
+      
+      // ========================================
+      // INITIALISATION
+      // ========================================
       async function init() {
         console.log("🚀 Initialisation de l'app...");
+      
         renderMembers();
+
+        // Précharger l'audio
         try {
           alertAudio = new Audio('/alert.mp3');
           alertAudio.load();
@@ -961,6 +1008,8 @@
         } catch (error) {
           console.error("❌ Erreur préchargement audio:", error);
         }
+      
+        // Vérifier si un utilisateur est déjà connecté
         const savedUser = localStorage.getItem("currentUser");
         if (savedUser) {
           currentUser = JSON.parse(savedUser);
@@ -970,47 +1019,70 @@
         } else {
           document.getElementById("loading").style.display = "none";
         }
+      
+        // Établir la connexion WebSocket
         await setupRealtimeSubscription();
+      
+        // Service Worker pour les notifications
         if ("serviceWorker" in navigator) {
           try {
             const registration = await navigator.serviceWorker.register("/sw.js");
             console.log("✅ Service Worker enregistré");
+            
             await navigator.serviceWorker.ready;
             console.log("✅ Service Worker prêt");
+            
             await setupPushNotifications();
+            
           } catch (err) {
             console.error("❌ Erreur Service Worker:", err);
           }
         } else {
           console.log("⚠️ Service Worker non disponible");
+          
           if ("Notification" in window && Notification.permission === "default") {
             await Notification.requestPermission();
           }
         }
       }
 
+      // ========================================
+      // SUBSCRIPTION WEBSOCKET AMÉLIORÉE
+      // ========================================
       async function setupRealtimeSubscription() {
         console.log("🔌 Configuration de la subscription Realtime...");
         updateConnectionStatus("connecting");
+
         if (realtimeChannel) {
           await supabaseClient.removeChannel(realtimeChannel);
           realtimeChannel = null;
         }
+
         try {
           realtimeChannel = supabaseClient
             .channel("alerts-channel")
-            .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, (payload) => {
-              console.log("📨 Changement reçu:", payload);
-              handleDatabaseChange(payload);
-            })
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "alerts",
+              },
+              (payload) => {
+                console.log("📨 Changement reçu:", payload);
+                handleDatabaseChange(payload);
+              }
+            )
             .subscribe((status, err) => {
               console.log("📡 Status de subscription:", status);
+
               if (err) {
                 console.error("❌ Erreur de subscription:", err);
                 updateConnectionStatus("disconnected");
                 attemptReconnect();
                 return;
               }
+
               if (status === "SUBSCRIBED") {
                 console.log("✅ Connecté au Realtime Supabase");
                 updateConnectionStatus("connected");
@@ -1035,21 +1107,33 @@
         }
       }
 
+      // ========================================
+      // RECONNEXION AUTOMATIQUE
+      // ========================================
       async function attemptReconnect() {
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           console.error("❌ Nombre maximum de tentatives de reconnexion atteint");
           return;
         }
+
         reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-        console.log(`🔄 Tentative de reconnexion ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delay / 1000}s...`);
+
+        console.log(
+          `🔄 Tentative de reconnexion ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delay / 1000}s...`
+        );
+
         setTimeout(async () => {
           await setupRealtimeSubscription();
         }, delay);
       }
 
+      // ========================================
+      // GESTION DES CHANGEMENTS DE BASE DE DONNÉES
+      // ========================================
       function handleDatabaseChange(payload) {
         console.log("🔄 Type de changement:", payload.eventType);
+
         if (payload.eventType === "INSERT" && payload.new.active) {
           handleIncomingAlert(payload.new);
         } else if (payload.eventType === "UPDATE") {
@@ -1061,23 +1145,31 @@
         }
       }
 
+      // ========================================
+      // GESTION DES MEMBRES
+      // ========================================
       function renderMembers() {
         const membersList = document.getElementById("membersList");
-        membersList.innerHTML = familyMembers.map(member => `
-          <div class="member-item" onclick="selectMember('${member.id}')">
-            <div class="member-avatar">${member.emoji}</div>
-            <div class="member-info">
-              <div class="member-name">${member.name}</div>
-              <div class="member-role">${member.role}</div>
-            </div>
-          </div>
-        `).join("");
+        membersList.innerHTML = familyMembers
+          .map(
+            (member) => `
+                <div class="member-item" onclick="selectMember('${member.id}')">
+                    <div class="member-avatar">${member.emoji}</div>
+                    <div class="member-info">
+                        <div class="member-name">${member.name}</div>
+                        <div class="member-role">${member.role}</div>
+                    </div>
+                </div>
+            `
+          )
+          .join("");
       }
 
       function selectMember(memberId) {
         document.querySelectorAll(".member-item").forEach((item) => {
           item.classList.remove("selected");
         });
+
         event.target.closest(".member-item").classList.add("selected");
         document.getElementById("confirmBtn").disabled = false;
         currentUser = familyMembers.find((m) => m.id === memberId);
@@ -1095,8 +1187,10 @@
         document.getElementById("loading").style.display = "none";
         document.getElementById("setupScreen").classList.remove("active");
         document.getElementById("mainScreen").classList.add("active");
+
         document.getElementById("currentUserName").textContent = currentUser.name;
         document.getElementById("currentUserEmoji").textContent = currentUser.emoji;
+
         const alertBtn = document.querySelector(".alert-button");
         if (alertBtn) alertBtn.classList.add("active");
       }
@@ -1104,15 +1198,20 @@
       function resetApp() {
         if (confirm("Veux-tu changer d'utilisateur ?")) {
           stopIntermittentAudio();
-          isAudioMuted = false;
+          
           document.getElementById('resultsOverlay').classList.remove('active');
+          
           localStorage.removeItem("currentUser");
           location.reload();
         }
       }
 
+      // ========================================
+      // VÉRIFICATION ALERTE ACTIVE
+      // ========================================
       async function checkActiveAlert() {
         console.log("🔍 Vérification des alertes actives...");
+
         try {
           const { data, error } = await supabaseClient
             .from("alerts")
@@ -1120,10 +1219,12 @@
             .eq("active", true)
             .order("start_timestamp", { ascending: false })
             .limit(1);
+
           if (error) {
             console.error("❌ Erreur lors de la vérification des alertes:", error);
             return;
           }
+
           if (data && data.length > 0) {
             console.log("⚠️ Alerte active trouvée:", data[0]);
             handleIncomingAlert(data[0]);
@@ -1135,15 +1236,21 @@
         }
       }
 
+      // ========================================
+      // DÉCLENCHEMENT D'UNE ALERTE
+      // ========================================
       async function triggerAlert() {
         if (!currentUser) {
           alert("Erreur : utilisateur non connecté");
           return;
         }
+
         console.log("🔔 Déclenchement d'une alerte par", currentUser.name);
+
         if (navigator.vibrate) {
           navigator.vibrate([200, 100, 200]);
         }
+
         const alertData = {
           initiator: currentUser.id,
           initiator_name: currentUser.name,
@@ -1152,16 +1259,29 @@
           active: true,
           participants: familyMembers
             .filter((m) => m.id !== currentUser.id)
-            .map((m) => ({ id: m.id, name: m.name, emoji: m.emoji, arrived: false, arrivalTime: null })),
+            .map((m) => ({
+              id: m.id,
+              name: m.name,
+              emoji: m.emoji,
+              arrived: false,
+              arrivalTime: null,
+            })),
         };
+
         try {
-          const { data, error } = await supabaseClient.from("alerts").insert([alertData]).select();
+          const { data, error } = await supabaseClient
+            .from("alerts")
+            .insert([alertData])
+            .select();
+
           if (error) {
             console.error("❌ Erreur lors de l'insertion de l'alerte:", error);
             alert("Erreur lors du déclenchement de l'alerte: " + error.message);
             return;
           }
+
           console.log("✅ Alerte créée avec succès", data);
+          
           if (data && data.length > 0) {
             handleIncomingAlert(data[0]);
           }
@@ -1171,22 +1291,25 @@
         }
       }
 
+      // ========================================
+      // RÉCEPTION D'UNE ALERTE
+      // ========================================
       function handleIncomingAlert(data) {
         console.log("📬 Traitement de l'alerte reçue:", data);
+
         currentAlertData = data;
+
+        // Si ce n'est pas l'initiateur, jouer le son et vibrer
         if (currentUser && currentUser.id !== data.initiator) {
           startBlinking();
-          const currentUserParticipant = data.participants.find(p => p.id === currentUser.id);
-          if (currentUserParticipant && currentUserParticipant.arrived) {
-            console.log("✅ Utilisateur déjà arrivé, pas de son");
-            isAudioMuted = true;
-          } else {
-            isAudioMuted = false;
-            startIntermittentAudio();
-          }
+
+          // JOUER LE SON D'ALERTE INTERMITTENT
+          startIntermittentAudio();
+
           if (navigator.vibrate) {
             navigator.vibrate([400, 200, 400, 200, 400]);
           }
+
           if ("Notification" in window && Notification.permission === "granted") {
             new Notification("À Table! 🍽️", {
               body: `${data.initiator_name} vous appelle à table!`,
@@ -1196,58 +1319,85 @@
               requireInteraction: true
             });
           }
+
           document.getElementById("stopBtn").style.display = "none";
         } else {
+          // C'est l'initiateur
           document.getElementById("stopBtn").style.display = "block";
         }
+
         document.getElementById("alertButtonContainer").style.display = "none";
         document.getElementById("alertActiveContainer").style.display = "flex";
+
         if (currentUser && currentUser.id === data.initiator) {
-          document.getElementById("alertInitiator").textContent = `${data.initiator_emoji} Vous avez appelé la famille à table`;
+          document.getElementById("alertInitiator").textContent = 
+            `${data.initiator_emoji} Vous avez appelé la famille à table`;
           document.getElementById("alertInitiator").style.animation = "none";
         } else {
-          document.getElementById("alertInitiator").textContent = `${data.initiator_emoji} ${data.initiator_name} vous appelle!`;
+          document.getElementById("alertInitiator").textContent = 
+            `${data.initiator_emoji} ${data.initiator_name} vous appelle!`;
           document.getElementById("alertInitiator").style.animation = "";
         }
+
         renderParticipants(data.participants);
+
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 100);
       }
 
+      // ========================================
+      // GESTION DU TIMER
+      // ========================================
       function updateTimer() {
         if (!currentAlertData) {
           clearInterval(timerInterval);
           return;
         }
-        const elapsed = Math.floor((Date.now() - new Date(currentAlertData.start_timestamp)) / 1000);
+
+        const elapsed = Math.floor(
+          (Date.now() - new Date(currentAlertData.start_timestamp)) / 1000
+        );
         const minutes = Math.floor(elapsed / 60);
         const seconds = elapsed % 60;
         document.getElementById("timer").textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
       }
 
+      // ========================================
+      // AFFICHAGE DES PARTICIPANTS
+      // ========================================
       function renderParticipants(participants) {
         const participantsList = document.getElementById("participantsList");
         const isInitiator = currentUser && currentUser.id === currentAlertData.initiator;
-        participantsList.innerHTML = participants.map(p => {
-          const canMark = isInitiator || (currentUser && currentUser.id === p.id && !p.arrived);
-          return `
-            <div class="participant ${p.arrived ? "arrived" : ""}" 
-                 data-user-id="${p.id}" 
-                 ${canMark ? `onclick="markArrived('${p.id}')"` : ""}
-                 style="${canMark && !p.arrived ? 'cursor: pointer;' : ''}">
-              <div class="participant-avatar">${p.emoji}</div>
-              <div class="participant-name">${p.name}</div>
-              <div class="participant-status">${p.arrived ? "Arrivé" : (currentUser && currentUser.id === p.id && !isInitiator ? "👆 Cliquez quand vous êtes arrivé" : "")}</div>
-            </div>
-          `;
-        }).join("");
+
+        participantsList.innerHTML = participants
+          .map(
+            (p) => `
+                <div class="participant ${p.arrived ? "arrived" : ""}" 
+                     data-user-id="${p.id}" 
+                     ${isInitiator ? `onclick="markArrived('${p.id}')"` : ""}>
+                    <div class="participant-avatar">${p.emoji}</div>
+                    <div class="participant-name">${p.name}</div>
+                    <div class="participant-status">${p.arrived ? "Arrivé" : ""}</div>
+                </div>
+            `
+          )
+          .join("");
       }
 
+      // ========================================
+      // MARQUER UN PARTICIPANT COMME ARRIVÉ
+      // ========================================
       async function markArrived(userId) {
-        if (!currentUser || !currentAlertData) return;
-        const canMark = currentUser.id === currentAlertData.initiator || (currentUser.id === userId);
-        if (!canMark) return;
+        if (
+          !currentUser ||
+          !currentAlertData ||
+          currentUser.id !== currentAlertData.initiator
+        ) {
+          return;
+        }
+
         console.log("✅ Marquage de", userId, "comme arrivé");
+
         const now = new Date().toISOString();
         const updatedParticipants = currentAlertData.participants.map((p) => {
           if (p.id === userId && !p.arrived) {
@@ -1255,19 +1405,21 @@
           }
           return p;
         });
+
         try {
-          const { error } = await supabaseClient.from("alerts").update({ participants: updatedParticipants }).eq("id", currentAlertData.id);
+          const { error } = await supabaseClient
+            .from("alerts")
+            .update({ participants: updatedParticipants })
+            .eq("id", currentAlertData.id);
+
           if (error) {
             console.error("❌ Erreur markArrived:", error);
             return;
           }
+
           currentAlertData.participants = updatedParticipants;
           renderParticipants(updatedParticipants);
-          if (currentUser.id === userId) {
-            console.log("🔇 Arrêt du son pour l'utilisateur arrivé");
-            isAudioMuted = true;
-            stopIntermittentAudio();
-          }
+
           if (updatedParticipants.every((p) => p.arrived)) {
             console.log("🎉 Tout le monde est arrivé!");
             setTimeout(() => stopAlert(), 1000);
@@ -1277,25 +1429,26 @@
         }
       }
 
+      // ========================================
+      // MISE À JOUR DES PARTICIPANTS (VIA WEBSOCKET)
+      // ========================================
       function updateParticipants(updatedParticipants) {
         if (currentAlertData) {
           currentAlertData.participants = updatedParticipants;
           renderParticipants(updatedParticipants);
-          if (currentUser) {
-            const currentUserParticipant = updatedParticipants.find(p => p.id === currentUser.id);
-            if (currentUserParticipant && currentUserParticipant.arrived && !isAudioMuted) {
-              console.log("🔇 Arrêt du son (mis à jour via WebSocket)");
-              isAudioMuted = true;
-              stopIntermittentAudio();
-            }
-          }
         }
       }
 
+      // ========================================
+      // ARRÊTER UNE ALERTE
+      // ========================================
       async function stopAlert() {
         if (!currentAlertData) return;
+
         console.log("🛑 Arrêt de l'alerte");
+
         const endTime = new Date().toISOString();
+
         const historyEntry = {
           initiator: currentAlertData.initiator,
           initiator_name: currentAlertData.initiator_name,
@@ -1304,18 +1457,32 @@
           participants: currentAlertData.participants.map((p) => ({
             id: p.id,
             name: p.name,
-            time_taken: p.arrivalTime ? Math.floor((new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000) : null,
+            time_taken: p.arrivalTime
+              ? Math.floor(
+                  (new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000
+                )
+              : null,
           })),
         };
+
         try {
-          const { error: historyError } = await supabaseClient.from("alert_history").insert([historyEntry]);
+          const { error: historyError } = await supabaseClient
+            .from("alert_history")
+            .insert([historyEntry]);
+
           if (historyError) {
             console.error("❌ Erreur sauvegarde historique:", historyError);
           }
-          const { error } = await supabaseClient.from("alerts").update({ active: false }).eq("id", currentAlertData.id);
+
+          const { error } = await supabaseClient
+            .from("alerts")
+            .update({ active: false })
+            .eq("id", currentAlertData.id);
+
           if (error) {
             console.error("❌ Erreur stopAlert:", error);
           }
+
           handleStopAlert();
           await loadHistory();
         } catch (error) {
@@ -1323,26 +1490,39 @@
         }
       }
 
+      // ========================================
+      // GÉRER L'ARRÊT D'UNE ALERTE (INTERFACE)
+      // ========================================
       function handleStopAlert() {
         console.log("🏁 Nettoyage de l'interface");
+
         clearInterval(timerInterval);
         stopBlinking();
+        
         stopIntermittentAudio();
-        isAudioMuted = false;
+        
         console.log("🔇 Son d'alerte arrêté");
+        
         showResults();
       }
-
+      
+      // ========================================
+      // AFFICHER LES RÉSULTATS
+      // ========================================
       function showResults() {
         if (!currentAlertData) return;
+        
         const resultsList = document.getElementById('resultsList');
         resultsList.innerHTML = currentAlertData.participants.map(p => {
-          const timeText = p.arrivalTime ? (() => {
-            const seconds = Math.floor((new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${minutes}:${String(secs).padStart(2, '0')}`;
-          })() : 'Non arrivé';
+          const timeText = p.arrivalTime 
+            ? (() => {
+                const seconds = Math.floor((new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${minutes}:${String(secs).padStart(2, '0')}`;
+              })()
+            : 'Non arrivé';
+          
           return `
             <div class="result-item ${p.arrived ? 'arrived' : ''}">
               <div class="result-avatar">${p.emoji}</div>
@@ -1353,29 +1533,45 @@
             </div>
           `;
         }).join('');
+        
         document.getElementById('resultsOverlay').classList.add('active');
       }
-
+      
+      // ========================================
+      // FERMER LES RÉSULTATS
+      // ========================================
       function closeResults() {
         document.getElementById('resultsOverlay').classList.remove('active');
+        
         document.getElementById("alertButtonContainer").style.display = "flex";
         document.getElementById("alertActiveContainer").style.display = "none";
         document.getElementById("stopBtn").style.display = "none";
         document.getElementById("timer").textContent = "00:00";
+
         currentAlertData = null;
-        isAudioMuted = false;
+
         const alertBtn = document.querySelector(".alert-button");
         if (alertBtn) alertBtn.classList.add("active");
       }
 
+      // ========================================
+      // CHARGEMENT DE L'HISTORIQUE
+      // ========================================
       async function loadHistory() {
         console.log("📜 Chargement de l'historique");
+
         try {
-          const { data, error } = await supabaseClient.from("alert_history").select("*").order("start_time", { ascending: false }).limit(50);
+          const { data, error } = await supabaseClient
+            .from("alert_history")
+            .select("*")
+            .order("start_time", { ascending: false })
+            .limit(50);
+
           if (error) {
             console.error("❌ Erreur loadHistory:", error);
             return;
           }
+
           console.log("✅ Historique chargé:", data.length, "entrées");
           renderHistory(data);
           renderAverages(data);
@@ -1384,31 +1580,62 @@
         }
       }
 
+      // ========================================
+      // AFFICHAGE DE L'HISTORIQUE
+      // ========================================
       function renderHistory(data) {
         const historyList = document.getElementById("historyList");
+
         if (!data || data.length === 0) {
-          historyList.innerHTML = '<p style="text-align: center; color: var(--text-light);">Aucun historique</p>';
+          historyList.innerHTML =
+            '<p style="text-align: center; color: var(--text-light);">Aucun historique</p>';
           return;
         }
-        historyList.innerHTML = data.map((entry) => {
-          const date = new Date(entry.start_time).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-          const times = entry.participants.map((p) => {
-            if (p.time_taken !== null) {
-              const minutes = Math.floor(p.time_taken / 60);
-              const seconds = p.time_taken % 60;
-              return `${p.name}: ${minutes}:${String(seconds).padStart(2, "0")}`;
-            }
-            return `${p.name}: Non arrivé`;
-          }).join(", ");
-          return `<div class="history-item"><div class="history-initiator">${entry.initiator_name} - ${date}</div><div class="history-times">${times}</div></div>`;
-        }).join("");
+
+        historyList.innerHTML = data
+          .map((entry) => {
+            const date = new Date(entry.start_time).toLocaleString("fr-FR", {
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            const times = entry.participants
+              .map((p) => {
+                if (p.time_taken !== null) {
+                  const minutes = Math.floor(p.time_taken / 60);
+                  const seconds = p.time_taken % 60;
+                  return `${p.name}: ${minutes}:${String(seconds).padStart(2, "0")}`;
+                }
+                return `${p.name}: Non arrivé`;
+              })
+              .join(", ");
+
+            return `
+                    <div class="history-item">
+                        <div class="history-initiator">${entry.initiator_name} - ${date}</div>
+                        <div class="history-times">${times}</div>
+                    </div>
+                `;
+          })
+          .join("");
       }
 
+      // ========================================
+      // AFFICHAGE DES MOYENNES
+      // ========================================
       function renderAverages(data) {
         const averages = {};
+
         familyMembers.forEach((member) => {
-          averages[member.id] = { name: member.name, emoji: member.emoji, times: [] };
+          averages[member.id] = {
+            name: member.name,
+            emoji: member.emoji,
+            times: [],
+          };
         });
+
         data.forEach((entry) => {
           entry.participants.forEach((p) => {
             if (p.time_taken !== null && averages[p.id]) {
@@ -1416,27 +1643,50 @@
             }
           });
         });
+
         const averagesTable = document.getElementById("averagesTable");
-        averagesTable.innerHTML = "<tr><th>Participant</th><th>Moyenne</th><th>Alertes</th></tr>";
+        averagesTable.innerHTML =
+          "<tr><th>Participant</th><th>Moyenne</th><th>Alertes</th></tr>";
+
         Object.values(averages).forEach((avg) => {
           if (avg.times.length > 0) {
             const mean = avg.times.reduce((a, b) => a + b, 0) / avg.times.length;
             const minutes = Math.floor(mean / 60);
             const seconds = Math.floor(mean % 60);
-            averagesTable.innerHTML += `<tr><td>${avg.emoji} ${avg.name}</td><td>${minutes}:${String(seconds).padStart(2, "0")}</td><td>${avg.times.length}</td></tr>`;
+            averagesTable.innerHTML += `
+                        <tr>
+                            <td>${avg.emoji} ${avg.name}</td>
+                            <td>${minutes}:${String(seconds).padStart(2, "0")}</td>
+                            <td>${avg.times.length}</td>
+                        </tr>
+                    `;
           } else {
-            averagesTable.innerHTML += `<tr><td>${avg.emoji} ${avg.name}</td><td>-</td><td>0</td></tr>`;
+            averagesTable.innerHTML += `
+                        <tr>
+                            <td>${avg.emoji} ${avg.name}</td>
+                            <td>-</td>
+                            <td>0</td>
+                        </tr>
+                    `;
           }
         });
       }
 
+      // ========================================
+      // AFFICHAGE/MASQUAGE DES SCORES
+      // ========================================
       function toggleScores() {
         const scoresSection = document.getElementById("scoresSection");
         const scoresButton = document.getElementById("scoresButton");
         scoresSection.classList.toggle("active");
-        scoresButton.textContent = scoresSection.classList.contains("active") ? "Fermer" : "Scores";
+        scoresButton.textContent = scoresSection.classList.contains("active")
+          ? "Fermer"
+          : "Scores";
       }
 
+      // ========================================
+      // EFFETS VISUELS
+      // ========================================
       function startBlinking() {
         const alertBtn = document.querySelector(".alert-button");
         if (alertBtn) alertBtn.classList.add("blinking");
@@ -1447,9 +1697,14 @@
         if (alertBtn) alertBtn.classList.remove("blinking");
       }
 
+      // ========================================
+      // DÉMARRAGE DE L'APPLICATION
+      // ========================================
       window.addEventListener("DOMContentLoaded", init);
+
       window.addEventListener("beforeunload", () => {
         stopIntermittentAudio();
+        
         if (realtimeChannel) {
           supabaseClient.removeChannel(realtimeChannel);
         }
