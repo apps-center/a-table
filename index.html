@@ -13,6 +13,7 @@
 
     <!-- iOS Web App -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="À Table!" />
     <link rel="apple-touch-icon" href="/favicon.jpg" />
@@ -131,7 +132,6 @@
         font-weight: 500;
       }
 
-      /* Badge de connexion */
       .connection-status {
         position: fixed;
         top: 10px;
@@ -468,7 +468,6 @@
         align-items: center;
         opacity: 0.5;
         transition: all 0.3s ease;
-        cursor: pointer;
       }
 
       .participant.arrived {
@@ -505,6 +504,7 @@
         font-size: 0.8rem;
         color: var(--text-light);
         margin-top: 2px;
+        text-align: center;
       }
 
       .participant.arrived .participant-status {
@@ -646,7 +646,6 @@
         animation: blink 1s infinite ease-in-out;
       }
       
-      /* Écran de résultats */
       .results-overlay {
         position: fixed;
         top: 0;
@@ -761,7 +760,6 @@
     </style>
   </head>
   <body>
-    <!-- Badge de connexion -->
     <div id="connectionStatus" class="connection-status connecting">
       <div class="status-dot"></div>
       <span>Connexion...</span>
@@ -850,7 +848,6 @@
       <div class="loading" id="loading">Connexion à Supabase...</div>
     </div>
     
-    <!-- Overlay de résultats -->
     <div id="resultsOverlay" class="results-overlay">
       <div class="results-card">
         <button class="results-close" onclick="closeResults()">×</button>
@@ -858,330 +855,605 @@
         <div id="resultsList" class="results-list"></div>
       </div>
     </div>
-      <script>
-      // ========================================
-// VARIABLES GLOBALES
-// ========================================
-let currentUser = null;
-let timerInterval = null;
-let currentAlertData = null;
-let realtimeChannel = null;
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-let alertAudio = null;
-let audioInterval = null; // ✅ NOUVEAU: Pour gérer l'intervalle de son
-let isAudioMuted = false; // ✅ NOUVEAU: Pour savoir si l'utilisateur a coupé le son
 
-// ========================================
-// GESTION DE L'AUDIO INTERMITTENT
-// ========================================
-function startIntermittentAudio() {
-  // Arrêter tout intervalle précédent
-  if (audioInterval) {
-    clearInterval(audioInterval);
-    audioInterval = null;
-  }
+    <script>
+      const SUPABASE_URL = "https://ckdxpugeszfgwgyafmge.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrZHhwdWdlc3pmZ3dneWFmbWdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzOTQ1OTIsImV4cCI6MjA4Mzk3MDU5Mn0.kysbA0Nroxnb2gClfkGKOerO9Sy4pVLigVfRxp0KO4A";
+      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const familyMembers = [
+        { id: "olivier", name: "Olivier", role: "Papa", emoji: "👨" },
+        { id: "delphine", name: "Delphine", role: "Maman", emoji: "👩" },
+        { id: "antoine", name: "Antoine", role: "12 ans", emoji: "👦" },
+        { id: "come", name: "Côme", role: "10 ans", emoji: "🧒" },
+      ];
+      let currentUser = null;
+      let timerInterval = null;
+      let currentAlertData = null;
+      let realtimeChannel = null;
+      let reconnectAttempts = 0;
+      const MAX_RECONNECT_ATTEMPTS = 5;
+      let alertAudio = null;
+      let audioInterval = null;
+      let isAudioMuted = false;
 
-  // Si l'utilisateur a coupé le son ou n'est pas concerné, ne rien faire
-  if (isAudioMuted || !alertAudio) return;
-
-  console.log("🔊 Démarrage de l'alerte sonore intermittente");
-
-  // Fonction pour jouer 4 secondes de son
-  const playAudioBurst = () => {
-    if (isAudioMuted || !currentAlertData) {
-      stopIntermittentAudio();
-      return;
-    }
-
-    alertAudio.currentTime = 0;
-    alertAudio.loop = false; // Pas de loop pour contrôler la durée
-    
-    alertAudio.play().catch(err => {
-      console.error("❌ Erreur lecture audio:", err);
-    });
-
-    // Arrêter après 4 secondes
-    setTimeout(() => {
-      if (alertAudio && !isAudioMuted) {
-        alertAudio.pause();
-        alertAudio.currentTime = 0;
+      function updateConnectionStatus(status) {
+        const statusEl = document.getElementById("connectionStatus");
+        const statusText = statusEl.querySelector("span");
+        statusEl.className = "connection-status " + status;
+        switch (status) {
+          case "connected":
+            statusText.textContent = "Connecté";
+            reconnectAttempts = 0;
+            break;
+          case "connecting":
+            statusText.textContent = "Connexion...";
+            break;
+          case "disconnected":
+            statusText.textContent = "Déconnecté";
+            break;
+        }
       }
-    }, 4000);
-  };
 
-  // Jouer immédiatement
-  playAudioBurst();
+      function startIntermittentAudio() {
+        if (audioInterval) {
+          clearInterval(audioInterval);
+          audioInterval = null;
+        }
+        if (isAudioMuted || !alertAudio) return;
+        console.log("🔊 Démarrage de l'alerte sonore intermittente");
+        const playAudioBurst = () => {
+          if (isAudioMuted || !currentAlertData) {
+            stopIntermittentAudio();
+            return;
+          }
+          alertAudio.currentTime = 0;
+          alertAudio.loop = false;
+          alertAudio.play().catch(err => {
+            console.error("❌ Erreur lecture audio:", err);
+          });
+          setTimeout(() => {
+            if (alertAudio && !isAudioMuted) {
+              alertAudio.pause();
+              alertAudio.currentTime = 0;
+            }
+          }, 4000);
+        };
+        playAudioBurst();
+        audioInterval = setInterval(playAudioBurst, 60000);
+      }
 
-  // Puis jouer toutes les 60 secondes (60000ms)
-  audioInterval = setInterval(playAudioBurst, 60000);
-}
+      function stopIntermittentAudio() {
+        console.log("🔇 Arrêt de l'alerte sonore");
+        if (audioInterval) {
+          clearInterval(audioInterval);
+          audioInterval = null;
+        }
+        if (alertAudio) {
+          alertAudio.pause();
+          alertAudio.currentTime = 0;
+        }
+      }
 
-function stopIntermittentAudio() {
-  console.log("🔇 Arrêt de l'alerte sonore");
-  
-  if (audioInterval) {
-    clearInterval(audioInterval);
-    audioInterval = null;
-  }
-  
-  if (alertAudio) {
-    alertAudio.pause();
-    alertAudio.currentTime = 0;
-  }
-}
+      async function setupPushNotifications() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          console.log("❌ Push notifications non supportées");
+          return;
+        }
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+            console.log("⚠️ Permission de notification refusée");
+            return;
+          }
+          console.log("✅ Permission de notification accordée");
+        } catch (error) {
+          console.error("❌ Erreur setup push notifications:", error);
+        }
+      }
 
-// ========================================
-// RÉCEPTION D'UNE ALERTE (MODIFIÉE)
-// ========================================
-function handleIncomingAlert(data) {
-  console.log("📬 Traitement de l'alerte reçue:", data);
+      async function init() {
+        console.log("🚀 Initialisation de l'app...");
+        renderMembers();
+        try {
+          alertAudio = new Audio('/alert.mp3');
+          alertAudio.load();
+          console.log("✅ Audio d'alerte préchargé");
+        } catch (error) {
+          console.error("❌ Erreur préchargement audio:", error);
+        }
+        const savedUser = localStorage.getItem("currentUser");
+        if (savedUser) {
+          currentUser = JSON.parse(savedUser);
+          showMainScreen();
+          await loadHistory();
+          await checkActiveAlert();
+        } else {
+          document.getElementById("loading").style.display = "none";
+        }
+        await setupRealtimeSubscription();
+        if ("serviceWorker" in navigator) {
+          try {
+            const registration = await navigator.serviceWorker.register("/sw.js");
+            console.log("✅ Service Worker enregistré");
+            await navigator.serviceWorker.ready;
+            console.log("✅ Service Worker prêt");
+            await setupPushNotifications();
+          } catch (err) {
+            console.error("❌ Erreur Service Worker:", err);
+          }
+        } else {
+          console.log("⚠️ Service Worker non disponible");
+          if ("Notification" in window && Notification.permission === "default") {
+            await Notification.requestPermission();
+          }
+        }
+      }
 
-  currentAlertData = data;
+      async function setupRealtimeSubscription() {
+        console.log("🔌 Configuration de la subscription Realtime...");
+        updateConnectionStatus("connecting");
+        if (realtimeChannel) {
+          await supabaseClient.removeChannel(realtimeChannel);
+          realtimeChannel = null;
+        }
+        try {
+          realtimeChannel = supabaseClient
+            .channel("alerts-channel")
+            .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, (payload) => {
+              console.log("📨 Changement reçu:", payload);
+              handleDatabaseChange(payload);
+            })
+            .subscribe((status, err) => {
+              console.log("📡 Status de subscription:", status);
+              if (err) {
+                console.error("❌ Erreur de subscription:", err);
+                updateConnectionStatus("disconnected");
+                attemptReconnect();
+                return;
+              }
+              if (status === "SUBSCRIBED") {
+                console.log("✅ Connecté au Realtime Supabase");
+                updateConnectionStatus("connected");
+              } else if (status === "CHANNEL_ERROR") {
+                console.error("❌ Erreur du canal");
+                updateConnectionStatus("disconnected");
+                attemptReconnect();
+              } else if (status === "TIMED_OUT") {
+                console.error("⏱️ Timeout de connexion");
+                updateConnectionStatus("disconnected");
+                attemptReconnect();
+              } else if (status === "CLOSED") {
+                console.log("🔌 Canal fermé");
+                updateConnectionStatus("disconnected");
+                attemptReconnect();
+              }
+            });
+        } catch (error) {
+          console.error("❌ Erreur lors de la création du canal:", error);
+          updateConnectionStatus("disconnected");
+          attemptReconnect();
+        }
+      }
 
-  // Si ce n'est pas l'initiateur, jouer le son et vibrer
-  if (currentUser && currentUser.id !== data.initiator) {
-    startBlinking();
+      async function attemptReconnect() {
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          console.error("❌ Nombre maximum de tentatives de reconnexion atteint");
+          return;
+        }
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        console.log(`🔄 Tentative de reconnexion ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delay / 1000}s...`);
+        setTimeout(async () => {
+          await setupRealtimeSubscription();
+        }, delay);
+      }
 
-    // ✅ Vérifier si cet utilisateur est déjà marqué comme arrivé
-    const currentUserParticipant = data.participants.find(p => p.id === currentUser.id);
-    
-    if (currentUserParticipant && currentUserParticipant.arrived) {
-      // L'utilisateur est déjà arrivé, ne pas jouer le son
-      console.log("✅ Utilisateur déjà arrivé, pas de son");
-      isAudioMuted = true;
-    } else {
-      // L'utilisateur n'est pas encore arrivé, jouer le son
-      isAudioMuted = false;
-      startIntermittentAudio();
-    }
+      function handleDatabaseChange(payload) {
+        console.log("🔄 Type de changement:", payload.eventType);
+        if (payload.eventType === "INSERT" && payload.new.active) {
+          handleIncomingAlert(payload.new);
+        } else if (payload.eventType === "UPDATE") {
+          if (!payload.new.active) {
+            handleStopAlert();
+          } else if (payload.new.participants) {
+            updateParticipants(payload.new.participants);
+          }
+        }
+      }
 
-    // Vibration
-    if (navigator.vibrate) {
-      navigator.vibrate([400, 200, 400, 200, 400]);
-    }
+      function renderMembers() {
+        const membersList = document.getElementById("membersList");
+        membersList.innerHTML = familyMembers.map(member => `
+          <div class="member-item" onclick="selectMember('${member.id}')">
+            <div class="member-avatar">${member.emoji}</div>
+            <div class="member-info">
+              <div class="member-name">${member.name}</div>
+              <div class="member-role">${member.role}</div>
+            </div>
+          </div>
+        `).join("");
+      }
 
-    // Notification
-    if (
-      "Notification" in window &&
-      Notification.permission === "granted"
-    ) {
-      new Notification("À Table! 🍽️", {
-        body: `${data.initiator_name} vous appelle à table!`,
-        icon: "/favicon.jpg",
-        vibrate: [400, 200, 400],
-        tag: 'alert-notification',
-        requireInteraction: true
-      });
-    }
+      function selectMember(memberId) {
+        document.querySelectorAll(".member-item").forEach((item) => {
+          item.classList.remove("selected");
+        });
+        event.target.closest(".member-item").classList.add("selected");
+        document.getElementById("confirmBtn").disabled = false;
+        currentUser = familyMembers.find((m) => m.id === memberId);
+      }
 
-    document.getElementById("stopBtn").style.display = "none";
-  } else {
-    // C'est l'initiateur
-    document.getElementById("stopBtn").style.display = "block";
-  }
+      function confirmUser() {
+        if (!currentUser) return;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+        showMainScreen();
+        loadHistory();
+        checkActiveAlert();
+      }
 
-  // Afficher l'interface d'alerte
-  document.getElementById("alertButtonContainer").style.display = "none";
-  document.getElementById("alertActiveContainer").style.display = "flex";
+      function showMainScreen() {
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("setupScreen").classList.remove("active");
+        document.getElementById("mainScreen").classList.add("active");
+        document.getElementById("currentUserName").textContent = currentUser.name;
+        document.getElementById("currentUserEmoji").textContent = currentUser.emoji;
+        const alertBtn = document.querySelector(".alert-button");
+        if (alertBtn) alertBtn.classList.add("active");
+      }
 
-  // Message différent selon si c'est l'initiateur ou non
-  if (currentUser && currentUser.id === data.initiator) {
-    document.getElementById("alertInitiator").textContent = 
-      `${data.initiator_emoji} Vous avez appelé la famille à table`;
-    document.getElementById("alertInitiator").style.animation = "none";
-  } else {
-    document.getElementById("alertInitiator").textContent = 
-      `${data.initiator_emoji} ${data.initiator_name} vous appelle!`;
-    document.getElementById("alertInitiator").style.animation = "";
-  }
+      function resetApp() {
+        if (confirm("Veux-tu changer d'utilisateur ?")) {
+          stopIntermittentAudio();
+          isAudioMuted = false;
+          document.getElementById('resultsOverlay').classList.remove('active');
+          localStorage.removeItem("currentUser");
+          location.reload();
+        }
+      }
 
-  renderParticipants(data.participants);
+      async function checkActiveAlert() {
+        console.log("🔍 Vérification des alertes actives...");
+        try {
+          const { data, error } = await supabaseClient
+            .from("alerts")
+            .select("*")
+            .eq("active", true)
+            .order("start_timestamp", { ascending: false })
+            .limit(1);
+          if (error) {
+            console.error("❌ Erreur lors de la vérification des alertes:", error);
+            return;
+          }
+          if (data && data.length > 0) {
+            console.log("⚠️ Alerte active trouvée:", data[0]);
+            handleIncomingAlert(data[0]);
+          } else {
+            console.log("✅ Aucune alerte active");
+          }
+        } catch (error) {
+          console.error("❌ Erreur checkActiveAlert:", error);
+        }
+      }
 
-  // Démarrer le timer
-  if (timerInterval) clearInterval(timerInterval);
-  timerInterval = setInterval(updateTimer, 100);
-}
+      async function triggerAlert() {
+        if (!currentUser) {
+          alert("Erreur : utilisateur non connecté");
+          return;
+        }
+        console.log("🔔 Déclenchement d'une alerte par", currentUser.name);
+        if (navigator.vibrate) {
+          navigator.vibrate([200, 100, 200]);
+        }
+        const alertData = {
+          initiator: currentUser.id,
+          initiator_name: currentUser.name,
+          initiator_emoji: currentUser.emoji,
+          start_timestamp: new Date().toISOString(),
+          active: true,
+          participants: familyMembers
+            .filter((m) => m.id !== currentUser.id)
+            .map((m) => ({ id: m.id, name: m.name, emoji: m.emoji, arrived: false, arrivalTime: null })),
+        };
+        try {
+          const { data, error } = await supabaseClient.from("alerts").insert([alertData]).select();
+          if (error) {
+            console.error("❌ Erreur lors de l'insertion de l'alerte:", error);
+            alert("Erreur lors du déclenchement de l'alerte: " + error.message);
+            return;
+          }
+          console.log("✅ Alerte créée avec succès", data);
+          if (data && data.length > 0) {
+            handleIncomingAlert(data[0]);
+          }
+        } catch (error) {
+          console.error("❌ Erreur triggerAlert:", error);
+          alert("Erreur : " + error.message);
+        }
+      }
 
-// ========================================
-// AFFICHAGE DES PARTICIPANTS (MODIFIÉ)
-// ========================================
-function renderParticipants(participants) {
-  const participantsList = document.getElementById("participantsList");
-  const isInitiator = currentUser && currentUser.id === currentAlertData.initiator;
+      function handleIncomingAlert(data) {
+        console.log("📬 Traitement de l'alerte reçue:", data);
+        currentAlertData = data;
+        if (currentUser && currentUser.id !== data.initiator) {
+          startBlinking();
+          const currentUserParticipant = data.participants.find(p => p.id === currentUser.id);
+          if (currentUserParticipant && currentUserParticipant.arrived) {
+            console.log("✅ Utilisateur déjà arrivé, pas de son");
+            isAudioMuted = true;
+          } else {
+            isAudioMuted = false;
+            startIntermittentAudio();
+          }
+          if (navigator.vibrate) {
+            navigator.vibrate([400, 200, 400, 200, 400]);
+          }
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("À Table! 🍽️", {
+              body: `${data.initiator_name} vous appelle à table!`,
+              icon: "/favicon.jpg",
+              vibrate: [400, 200, 400],
+              tag: 'alert-notification',
+              requireInteraction: true
+            });
+          }
+          document.getElementById("stopBtn").style.display = "none";
+        } else {
+          document.getElementById("stopBtn").style.display = "block";
+        }
+        document.getElementById("alertButtonContainer").style.display = "none";
+        document.getElementById("alertActiveContainer").style.display = "flex";
+        if (currentUser && currentUser.id === data.initiator) {
+          document.getElementById("alertInitiator").textContent = `${data.initiator_emoji} Vous avez appelé la famille à table`;
+          document.getElementById("alertInitiator").style.animation = "none";
+        } else {
+          document.getElementById("alertInitiator").textContent = `${data.initiator_emoji} ${data.initiator_name} vous appelle!`;
+          document.getElementById("alertInitiator").style.animation = "";
+        }
+        renderParticipants(data.participants);
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimer, 100);
+      }
 
-  participantsList.innerHTML = participants
-    .map(
-      (p) => {
-        // ✅ NOUVEAU: Permettre à chaque participant de se marquer lui-même comme arrivé
-        const canMark = isInitiator || (currentUser && currentUser.id === p.id && !p.arrived);
-        
-        return `
-          <div class="participant ${p.arrived ? "arrived" : ""}" 
-               data-user-id="${p.id}" 
-               ${canMark ? `onclick="markArrived('${p.id}')"` : ""}
-               style="${canMark && !p.arrived ? 'cursor: pointer;' : ''}">
+      function updateTimer() {
+        if (!currentAlertData) {
+          clearInterval(timerInterval);
+          return;
+        }
+        const elapsed = Math.floor((Date.now() - new Date(currentAlertData.start_timestamp)) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        document.getElementById("timer").textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      }
+
+      function renderParticipants(participants) {
+        const participantsList = document.getElementById("participantsList");
+        const isInitiator = currentUser && currentUser.id === currentAlertData.initiator;
+        participantsList.innerHTML = participants.map(p => {
+          const canMark = isInitiator || (currentUser && currentUser.id === p.id && !p.arrived);
+          return `
+            <div class="participant ${p.arrived ? "arrived" : ""}" 
+                 data-user-id="${p.id}" 
+                 ${canMark ? `onclick="markArrived('${p.id}')"` : ""}
+                 style="${canMark && !p.arrived ? 'cursor: pointer;' : ''}">
               <div class="participant-avatar">${p.emoji}</div>
               <div class="participant-name">${p.name}</div>
-              <div class="participant-status">${
-                p.arrived ? "Arrivé" : (currentUser && currentUser.id === p.id && !isInitiator ? "👆 Cliquez quand vous êtes arrivé" : "")
-              }</div>
-          </div>
-        `;
+              <div class="participant-status">${p.arrived ? "Arrivé" : (currentUser && currentUser.id === p.id && !isInitiator ? "👆 Cliquez quand vous êtes arrivé" : "")}</div>
+            </div>
+          `;
+        }).join("");
       }
-    )
-    .join("");
-}
 
-// ========================================
-// MARQUER UN PARTICIPANT COMME ARRIVÉ (MODIFIÉ)
-// ========================================
-async function markArrived(userId) {
-  if (!currentUser || !currentAlertData) {
-    return;
-  }
+      async function markArrived(userId) {
+        if (!currentUser || !currentAlertData) return;
+        const canMark = currentUser.id === currentAlertData.initiator || (currentUser.id === userId);
+        if (!canMark) return;
+        console.log("✅ Marquage de", userId, "comme arrivé");
+        const now = new Date().toISOString();
+        const updatedParticipants = currentAlertData.participants.map((p) => {
+          if (p.id === userId && !p.arrived) {
+            return { ...p, arrived: true, arrivalTime: now };
+          }
+          return p;
+        });
+        try {
+          const { error } = await supabaseClient.from("alerts").update({ participants: updatedParticipants }).eq("id", currentAlertData.id);
+          if (error) {
+            console.error("❌ Erreur markArrived:", error);
+            return;
+          }
+          currentAlertData.participants = updatedParticipants;
+          renderParticipants(updatedParticipants);
+          if (currentUser.id === userId) {
+            console.log("🔇 Arrêt du son pour l'utilisateur arrivé");
+            isAudioMuted = true;
+            stopIntermittentAudio();
+          }
+          if (updatedParticipants.every((p) => p.arrived)) {
+            console.log("🎉 Tout le monde est arrivé!");
+            setTimeout(() => stopAlert(), 1000);
+          }
+        } catch (error) {
+          console.error("❌ Erreur markArrived:", error);
+        }
+      }
 
-  // ✅ NOUVEAU: Permettre à l'utilisateur de se marquer lui-même OU à l'initiateur de marquer n'importe qui
-  const canMark = 
-    currentUser.id === currentAlertData.initiator || 
-    (currentUser.id === userId);
+      function updateParticipants(updatedParticipants) {
+        if (currentAlertData) {
+          currentAlertData.participants = updatedParticipants;
+          renderParticipants(updatedParticipants);
+          if (currentUser) {
+            const currentUserParticipant = updatedParticipants.find(p => p.id === currentUser.id);
+            if (currentUserParticipant && currentUserParticipant.arrived && !isAudioMuted) {
+              console.log("🔇 Arrêt du son (mis à jour via WebSocket)");
+              isAudioMuted = true;
+              stopIntermittentAudio();
+            }
+          }
+        }
+      }
 
-  if (!canMark) {
-    return;
-  }
+      async function stopAlert() {
+        if (!currentAlertData) return;
+        console.log("🛑 Arrêt de l'alerte");
+        const endTime = new Date().toISOString();
+        const historyEntry = {
+          initiator: currentAlertData.initiator,
+          initiator_name: currentAlertData.initiator_name,
+          start_time: currentAlertData.start_timestamp,
+          end_time: endTime,
+          participants: currentAlertData.participants.map((p) => ({
+            id: p.id,
+            name: p.name,
+            time_taken: p.arrivalTime ? Math.floor((new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000) : null,
+          })),
+        };
+        try {
+          const { error: historyError } = await supabaseClient.from("alert_history").insert([historyEntry]);
+          if (historyError) {
+            console.error("❌ Erreur sauvegarde historique:", historyError);
+          }
+          const { error } = await supabaseClient.from("alerts").update({ active: false }).eq("id", currentAlertData.id);
+          if (error) {
+            console.error("❌ Erreur stopAlert:", error);
+          }
+          handleStopAlert();
+          await loadHistory();
+        } catch (error) {
+          console.error("❌ Erreur stopAlert:", error);
+        }
+      }
 
-  console.log("✅ Marquage de", userId, "comme arrivé");
-
-  const now = new Date().toISOString();
-  const updatedParticipants = currentAlertData.participants.map((p) => {
-    if (p.id === userId && !p.arrived) {
-      return { ...p, arrived: true, arrivalTime: now };
-    }
-    return p;
-  });
-
-  try {
-    const { error } = await supabaseClient
-      .from("alerts")
-      .update({ participants: updatedParticipants })
-      .eq("id", currentAlertData.id);
-
-    if (error) {
-      console.error("❌ Erreur markArrived:", error);
-      return;
-    }
-
-    // Mise à jour locale immédiate
-    currentAlertData.participants = updatedParticipants;
-    renderParticipants(updatedParticipants);
-
-    // ✅ NOUVEAU: Si c'est l'utilisateur actuel qui se marque comme arrivé, arrêter le son
-    if (currentUser.id === userId) {
-      console.log("🔇 Arrêt du son pour l'utilisateur arrivé");
-      isAudioMuted = true;
-      stopIntermittentAudio();
-    }
-
-    // Vérifier si tout le monde est arrivé
-    if (updatedParticipants.every((p) => p.arrived)) {
-      console.log("🎉 Tout le monde est arrivé!");
-      setTimeout(() => stopAlert(), 1000);
-    }
-  } catch (error) {
-    console.error("❌ Erreur markArrived:", error);
-  }
-}
-
-// ========================================
-// MISE À JOUR DES PARTICIPANTS (VIA WEBSOCKET) (MODIFIÉ)
-// ========================================
-function updateParticipants(updatedParticipants) {
-  if (currentAlertData) {
-    currentAlertData.participants = updatedParticipants;
-    renderParticipants(updatedParticipants);
-    
-    // ✅ NOUVEAU: Vérifier si l'utilisateur actuel vient d'être marqué comme arrivé
-    if (currentUser) {
-      const currentUserParticipant = updatedParticipants.find(p => p.id === currentUser.id);
-      if (currentUserParticipant && currentUserParticipant.arrived && !isAudioMuted) {
-        console.log("🔇 Arrêt du son (mis à jour via WebSocket)");
-        isAudioMuted = true;
+      function handleStopAlert() {
+        console.log("🏁 Nettoyage de l'interface");
+        clearInterval(timerInterval);
+        stopBlinking();
         stopIntermittentAudio();
+        isAudioMuted = false;
+        console.log("🔇 Son d'alerte arrêté");
+        showResults();
       }
-    }
-  }
-}
 
-// ========================================
-// GÉRER L'ARRÊT D'UNE ALERTE (INTERFACE) (MODIFIÉ)
-// ========================================
-function handleStopAlert() {
-  console.log("🏁 Nettoyage de l'interface");
+      function showResults() {
+        if (!currentAlertData) return;
+        const resultsList = document.getElementById('resultsList');
+        resultsList.innerHTML = currentAlertData.participants.map(p => {
+          const timeText = p.arrivalTime ? (() => {
+            const seconds = Math.floor((new Date(p.arrivalTime) - new Date(currentAlertData.start_timestamp)) / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${minutes}:${String(secs).padStart(2, '0')}`;
+          })() : 'Non arrivé';
+          return `
+            <div class="result-item ${p.arrived ? 'arrived' : ''}">
+              <div class="result-avatar">${p.emoji}</div>
+              <div class="result-info">
+                <div class="result-name">${p.name}</div>
+              </div>
+              <div class="result-time">${timeText}</div>
+            </div>
+          `;
+        }).join('');
+        document.getElementById('resultsOverlay').classList.add('active');
+      }
 
-  clearInterval(timerInterval);
-  stopBlinking();
-  
-  // ✅ ARRÊTER LE SON ET L'INTERVALLE
-  stopIntermittentAudio();
-  isAudioMuted = false; // Réinitialiser pour la prochaine alerte
-  
-  console.log("🔇 Son d'alerte arrêté");
-  
-  // Afficher les résultats avant de tout fermer
-  showResults();
-}
+      function closeResults() {
+        document.getElementById('resultsOverlay').classList.remove('active');
+        document.getElementById("alertButtonContainer").style.display = "flex";
+        document.getElementById("alertActiveContainer").style.display = "none";
+        document.getElementById("stopBtn").style.display = "none";
+        document.getElementById("timer").textContent = "00:00";
+        currentAlertData = null;
+        isAudioMuted = false;
+        const alertBtn = document.querySelector(".alert-button");
+        if (alertBtn) alertBtn.classList.add("active");
+      }
 
-// ========================================
-// FERMER LES RÉSULTATS (MODIFIÉ)
-// ========================================
-function closeResults() {
-  document.getElementById('resultsOverlay').classList.remove('active');
-  
-  // Nettoyer l'interface d'alerte
-  document.getElementById("alertButtonContainer").style.display = "flex";
-  document.getElementById("alertActiveContainer").style.display = "none";
-  document.getElementById("stopBtn").style.display = "none";
-  document.getElementById("timer").textContent = "00:00";
+      async function loadHistory() {
+        console.log("📜 Chargement de l'historique");
+        try {
+          const { data, error } = await supabaseClient.from("alert_history").select("*").order("start_time", { ascending: false }).limit(50);
+          if (error) {
+            console.error("❌ Erreur loadHistory:", error);
+            return;
+          }
+          console.log("✅ Historique chargé:", data.length, "entrées");
+          renderHistory(data);
+          renderAverages(data);
+        } catch (error) {
+          console.error("❌ Erreur loadHistory:", error);
+        }
+      }
 
-  currentAlertData = null;
-  isAudioMuted = false; // ✅ NOUVEAU: Réinitialiser
+      function renderHistory(data) {
+        const historyList = document.getElementById("historyList");
+        if (!data || data.length === 0) {
+          historyList.innerHTML = '<p style="text-align: center; color: var(--text-light);">Aucun historique</p>';
+          return;
+        }
+        historyList.innerHTML = data.map((entry) => {
+          const date = new Date(entry.start_time).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          const times = entry.participants.map((p) => {
+            if (p.time_taken !== null) {
+              const minutes = Math.floor(p.time_taken / 60);
+              const seconds = p.time_taken % 60;
+              return `${p.name}: ${minutes}:${String(seconds).padStart(2, "0")}`;
+            }
+            return `${p.name}: Non arrivé`;
+          }).join(", ");
+          return `<div class="history-item"><div class="history-initiator">${entry.initiator_name} - ${date}</div><div class="history-times">${times}</div></div>`;
+        }).join("");
+      }
 
-  const alertBtn = document.querySelector(".alert-button");
-  if (alertBtn) alertBtn.classList.add("active");
-}
+      function renderAverages(data) {
+        const averages = {};
+        familyMembers.forEach((member) => {
+          averages[member.id] = { name: member.name, emoji: member.emoji, times: [] };
+        });
+        data.forEach((entry) => {
+          entry.participants.forEach((p) => {
+            if (p.time_taken !== null && averages[p.id]) {
+              averages[p.id].times.push(p.time_taken);
+            }
+          });
+        });
+        const averagesTable = document.getElementById("averagesTable");
+        averagesTable.innerHTML = "<tr><th>Participant</th><th>Moyenne</th><th>Alertes</th></tr>";
+        Object.values(averages).forEach((avg) => {
+          if (avg.times.length > 0) {
+            const mean = avg.times.reduce((a, b) => a + b, 0) / avg.times.length;
+            const minutes = Math.floor(mean / 60);
+            const seconds = Math.floor(mean % 60);
+            averagesTable.innerHTML += `<tr><td>${avg.emoji} ${avg.name}</td><td>${minutes}:${String(seconds).padStart(2, "0")}</td><td>${avg.times.length}</td></tr>`;
+          } else {
+            averagesTable.innerHTML += `<tr><td>${avg.emoji} ${avg.name}</td><td>-</td><td>0</td></tr>`;
+          }
+        });
+      }
 
-// ========================================
-// RESET APP (MODIFIÉ)
-// ========================================
-function resetApp() {
-  if (confirm("Veux-tu changer d'utilisateur ?")) {
-    // ✅ Arrêter l'audio et l'intervalle
-    stopIntermittentAudio();
-    isAudioMuted = false;
-    
-    // Fermer l'overlay de résultats s'il est ouvert
-    document.getElementById('resultsOverlay').classList.remove('active');
-    
-    localStorage.removeItem("currentUser");
-    location.reload();
-  }
-}
+      function toggleScores() {
+        const scoresSection = document.getElementById("scoresSection");
+        const scoresButton = document.getElementById("scoresButton");
+        scoresSection.classList.toggle("active");
+        scoresButton.textContent = scoresSection.classList.contains("active") ? "Fermer" : "Scores";
+      }
 
-// ========================================
-// DÉMARRAGE DE L'APPLICATION (MODIFIÉ)
-// ========================================
-window.addEventListener("DOMContentLoaded", init);
+      function startBlinking() {
+        const alertBtn = document.querySelector(".alert-button");
+        if (alertBtn) alertBtn.classList.add("blinking");
+      }
 
-// Gérer la fermeture de la page (MODIFIÉ)
-window.addEventListener("beforeunload", () => {
-  // ✅ Arrêter l'audio et l'intervalle à la fermeture
-  stopIntermittentAudio();
-  
-  if (realtimeChannel) {
-    supabaseClient.removeChannel(realtimeChannel);
-  }
-});
-    
+      function stopBlinking() {
+        const alertBtn = document.querySelector(".alert-button");
+        if (alertBtn) alertBtn.classList.remove("blinking");
+      }
+
+      window.addEventListener("DOMContentLoaded", init);
+      window.addEventListener("beforeunload", () => {
+        stopIntermittentAudio();
+        if (realtimeChannel) {
+          supabaseClient.removeChannel(realtimeChannel);
+        }
+      });
     </script>
   </body>
 </html>
