@@ -920,52 +920,82 @@
           clearInterval(audioInterval);
           audioInterval = null;
         }
-
-        if (!alertAudio) return;
-
+      
+        if (!alertAudio) {
+          console.error("❌ alertAudio n'est pas défini");
+          return;
+        }
+      
         console.log("🔊 Démarrage de l'alerte sonore intermittente");
-
+      
         // Fonction pour jouer 4 secondes de son
         const playAudioBurst = () => {
           if (!currentAlertData) {
+            console.log("⏹️ Pas d'alerte active, arrêt du son");
             stopIntermittentAudio();
             return;
           }
-
-          alertAudio.currentTime = 0;
-          alertAudio.loop = false;
+      
+          console.log("🎵 Lecture audio 4 secondes...");
           
-          alertAudio.play().catch(err => {
-            console.error("❌ Erreur lecture audio:", err);
-          });
-
-          // Arrêter après 4 secondes
-          setTimeout(() => {
-            if (alertAudio) {
-              alertAudio.pause();
-              alertAudio.currentTime = 0;
+          try {
+            alertAudio.currentTime = 0;
+            alertAudio.loop = false;
+            
+            // Jouer l'audio
+            const playPromise = alertAudio.play();
+            
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log("✅ Audio démarré");
+                })
+                .catch(err => {
+                  console.error("❌ Erreur lecture audio:", err);
+                  // Sur mobile, l'utilisateur doit interagir avec la page d'abord
+                  console.log("💡 Sur mobile, touchez l'écran pour activer le son");
+                });
             }
-          }, 4000);
+      
+            // Arrêter après 4 secondes
+            setTimeout(() => {
+              if (alertAudio && currentAlertData) {
+                alertAudio.pause();
+                alertAudio.currentTime = 0;
+                console.log("⏸️ Audio mis en pause après 4s");
+              }
+            }, 4000);
+            
+          } catch (error) {
+            console.error("❌ Erreur dans playAudioBurst:", error);
+          }
         };
-
+      
         // Jouer immédiatement
         playAudioBurst();
-
+      
         // Puis jouer toutes les 60 secondes (60000ms)
-        audioInterval = setInterval(playAudioBurst, 60000);
+        audioInterval = setInterval(() => {
+          console.log("🔁 Intervalle 60s - Rejouer le son");
+          playAudioBurst();
+        }, 60000);
+        
+        console.log("✅ Intervalle audio configuré (60s)");
       }
-
+      
       function stopIntermittentAudio() {
         console.log("🔇 Arrêt de l'alerte sonore");
         
         if (audioInterval) {
           clearInterval(audioInterval);
           audioInterval = null;
+          console.log("✅ Intervalle audio arrêté");
         }
         
         if (alertAudio) {
           alertAudio.pause();
           alertAudio.currentTime = 0;
+          console.log("✅ Audio arrêté");
         }
       }
 
